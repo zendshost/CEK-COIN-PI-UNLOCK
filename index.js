@@ -1,6 +1,6 @@
 // =================================================================
 // Skrip Pengecek Aset Akun Pi Network
-// Versi: Final (dengan perbaikan metode .claimant())
+// Versi: Final (Format waktu natural: jam 4 Sore, jam 12 Siang, dll.)
 // =================================================================
 
 const fs = require('fs');
@@ -10,8 +10,8 @@ const edHd = require('ed25519-hd-key');
 const StellarSdk = require('stellar-sdk');
 
 // --- PENGATURAN WAJIB ---
-const TELEGRAM_BOT_TOKEN = 'ISI_DENGAN_TOKEN_BOT_ANDA'; // isi token bot telegram anda
-const TELEGRAM_CHAT_ID = 'ISI_DENGAN_CHAT_ID_ANDA'; // isi id telegram anda
+const TELEGRAM_BOT_TOKEN = 'TOKEN_BOT';
+const TELEGRAM_CHAT_ID = 'ID_TELEGRAM';
 // -------------------------
 
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
@@ -21,7 +21,7 @@ function delay(ms) {
 }
 
 async function kirimTelegram(pesan) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'ISI_DENGAN_TOKEN_BOT_ANDA') { 
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'ISI_DENGAN_TOKEN_BOT_ANDA') {
     console.warn('⚠️ Token atau Chat ID Telegram belum diatur. Pesan tidak dikirim.');
     return;
   }
@@ -72,7 +72,6 @@ async function cekSemua() {
 
       const account = await server.loadAccount(pubkey);
 
-      // <<< INI BAGIAN YANG DIPERBAIKI >>>
       const claimableBalances = await server.claimableBalances().claimant(pubkey).limit(50).call();
 
       if (claimableBalances.records.length > 0) {
@@ -93,10 +92,46 @@ async function cekSemua() {
           
           if (userClaimant && userClaimant.predicate && userClaimant.predicate.not && userClaimant.predicate.not.abs_before) {
             const unlockDate = userClaimant.predicate.not.abs_before;
-            const tanggalUnlockFormatted = new Date(unlockDate).toLocaleString('id-ID', {
-              timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
-            });
-            pesanLockup += ` - *${amount.toFixed(2)} Pi* (Buka Kunci: ${tanggalUnlockFormatted} UTC)\n`;
+            
+            // =========================================================================
+            // === LOGIKA BARU UNTUK FORMAT WAKTU NATURAL SESUAI PERMINTAAN ANDA ===
+            // =========================================================================
+            const dateObj = new Date(unlockDate);
+            const options = { timeZone: 'Asia/Jakarta' };
+
+            // 1. Ambil bagian tanggal (misal: "17 Agustus 2024")
+            const tanggalFormatted = dateObj.toLocaleDateString('id-ID', { ...options, year: 'numeric', month: 'long', day: 'numeric' });
+
+            // 2. Ambil komponen waktu untuk logika
+            const jam24 = parseInt(dateObj.toLocaleString('id-ID', { ...options, hour: '2-digit', hour12: false }));
+            const menit = dateObj.toLocaleString('id-ID', { ...options, minute: '2-digit' });
+            const detik = dateObj.toLocaleString('id-ID', { ...options, second: '2-digit' });
+
+            // 3. Konversi jam 24 ke format 12 (1-12)
+            let jam12 = jam24 % 12;
+            if (jam12 === 0) {
+                jam12 = 12; // Jam 0 (tengah malam) & jam 12 (siang) menjadi 12
+            }
+
+            // 4. Tentukan keterangan waktu berdasarkan jam 24
+            let keteranganWaktu;
+            if (jam24 >= 4 && jam24 < 6) {
+                keteranganWaktu = 'Subuh';
+            } else if (jam24 >= 6 && jam24 < 11) {
+                keteranganWaktu = 'Pagi';
+            } else if (jam24 >= 11 && jam24 < 15) {
+                keteranganWaktu = 'Siang';
+            } else if (jam24 >= 15 && jam24 < 19) {
+                keteranganWaktu = 'Sore';
+            } else { // Termasuk jam 19-23 (malam) dan 0-3 (dini hari/malam)
+                keteranganWaktu = 'Malam';
+            }
+
+            // 5. Gabungkan semua menjadi format akhir yang diinginkan
+            const tanggalUnlockLengkap = `${tanggalFormatted}, jam ${jam12}:${menit}:${detik} ${keteranganWaktu}`;
+            // ======================= AKHIR DARI LOGIKA BARU ========================
+
+            pesanLockup += ` - *${amount.toFixed(2)} Pi* (Buka Kunci: ${tanggalUnlockLengkap})\n`;
           } else {
             pesanLockup += ` - *${amount.toFixed(2)} Pi* (Tanggal buka kunci tidak terdeteksi)\n`;
           }
