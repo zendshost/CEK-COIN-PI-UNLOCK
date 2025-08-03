@@ -10,8 +10,8 @@ const edHd = require('ed25519-hd-key');
 const StellarSdk = require('stellar-sdk');
 
 // --- PENGATURAN WAJIB ---
-const TELEGRAM_BOT_TOKEN = 'ISI_DENGAN_TOKEN_BOT_ANDA';
-const TELEGRAM_CHAT_ID = 'ISI_DENGAN_CHAT_ID_ANDA';
+const TELEGRAM_BOT_TOKEN = 'ISI_DENGAN_TOKEN_BOT_ANDA'; // isi token bot telegram anda
+const TELEGRAM_CHAT_ID = 'ISI_DENGAN_CHAT_ID_ANDA'; // isi id telegram anda
 // -------------------------
 
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
@@ -21,7 +21,7 @@ function delay(ms) {
 }
 
 async function kirimTelegram(pesan) {
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'ISI_DENGAN_TOKEN_BOT_ANDA') {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'ISI_DENGAN_TOKEN_BOT_ANDA') { 
     console.warn('⚠️ Token atau Chat ID Telegram belum diatur. Pesan tidak dikirim.');
     return;
   }
