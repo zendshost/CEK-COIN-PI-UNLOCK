@@ -1,12 +1,6 @@
 // =================================================================
 // Skrip Pengecek Aset Akun Pi Network
-// Versi: Final
-// Fitur:
-// - Cek Saldo Tersedia
-// - Cek Koin Terkunci (Lockup) dengan parsing yang akurat
-// - Filter hasil: Hanya kirim notifikasi jika ada lockup
-// - Menggunakan API resmi Pi Network
-// - Jeda anti-spam
+// Versi: Final (dengan perbaikan metode .claimant())
 // =================================================================
 
 const fs = require('fs');
@@ -16,27 +10,16 @@ const edHd = require('ed25519-hd-key');
 const StellarSdk = require('stellar-sdk');
 
 // --- PENGATURAN WAJIB ---
-// Ganti dengan token bot Telegram Anda
 const TELEGRAM_BOT_TOKEN = 'ISI_DENGAN_TOKEN_BOT_ANDA';
-// Ganti dengan ID chat (bisa grup atau channel)
 const TELEGRAM_CHAT_ID = 'ISI_DENGAN_CHAT_ID_ANDA';
 // -------------------------
 
-// Menggunakan endpoint resmi dan andal dari Pi Network
 const server = new StellarSdk.Server('https://api.mainnet.minepi.com');
 
-/**
- * Fungsi untuk memberi jeda dalam eksekusi.
- * @param {number} ms - Waktu jeda dalam milidetik.
- */
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Mengirim pesan ke channel/grup Telegram yang ditentukan.
- * @param {string} pesan - Teks pesan yang akan dikirim.
- */
 async function kirimTelegram(pesan) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN === 'ISI_DENGAN_TOKEN_BOT_ANDA') {
     console.warn('⚠️ Token atau Chat ID Telegram belum diatur. Pesan tidak dikirim.');
@@ -51,7 +34,6 @@ async function kirimTelegram(pesan) {
     });
   } catch (error) {
     console.error('❌ Gagal kirim ke Telegram:', error.message);
-    // Jika terkena rate limit dari Telegram, tunggu 10 detik
     if (error.response && error.response.status === 429) {
       console.log('Terkena rate limit Telegram, menunggu 2 detik...');
       await delay(2000);
@@ -59,31 +41,21 @@ async function kirimTelegram(pesan) {
   }
 }
 
-/**
- * Mengubah 24 kata mnemonic menjadi keypair Stellar untuk Pi Network.
- * @param {string} mnemonic - Frasa mnemonic 24 kata.
- * @returns {StellarSdk.Keypair} Keypair yang bisa digunakan.
- */
 function mnemonicToStellarKeypair(mnemonic) {
   const seed = bip39.mnemonicToSeedSync(mnemonic);
   const { key } = edHd.derivePath("m/44'/314159'/0'", seed);
   return StellarSdk.Keypair.fromRawEd25519Seed(key);
 }
 
-// Baca file pharses.txt dan siapkan daftar mnemonic
 const mnemonics = fs.readFileSync('pharses.txt', 'utf8')
   .split('\n')
-  .map(line => line.trim()) // Hapus spasi di awal/akhir
-  .filter(line => line && line.split(' ').length === 24); // Hanya ambil yang valid 24 kata
+  .map(line => line.trim())
+  .filter(line => line && line.split(' ').length === 24);
 
-// Kosongkan file hasil dari eksekusi sebelumnya untuk memulai dari awal
 fs.writeFileSync('valid_with_lockup.txt', '');
 fs.writeFileSync('valid_no_lockup.txt', '');
 fs.writeFileSync('invalid.txt', '');
 
-/**
- * Fungsi utama untuk mengeksekusi pengecekan semua mnemonic.
- */
 async function cekSemua() {
   console.log(`====================================================`);
   console.log(`Memulai pengecekan untuk ${mnemonics.length} mnemonic...`);
@@ -98,22 +70,18 @@ async function cekSemua() {
       const keypair = mnemonicToStellarKeypair(mnemonic);
       const pubkey = keypair.publicKey();
 
-      // 1. Cek apakah akun terdaftar di jaringan
       const account = await server.loadAccount(pubkey);
 
-      // 2. Jika terdaftar, cek koin terkunci (Claimable Balances)
-      const claimableBalances = await server.claimableBalances().forClaimant(pubkey).limit(50).call();
+      // <<< INI BAGIAN YANG DIPERBAIKI >>>
+      const claimableBalances = await server.claimableBalances().claimant(pubkey).limit(50).call();
 
-      // 3. Logika utama: HANYA proses lebih lanjut jika ada koin terkunci
       if (claimableBalances.records.length > 0) {
         console.log(`[${index + 1}/${mnemonics.length}] ✅ DITEMUKAN: Akun dengan lockup! Public Key: ${pubkey}`);
         fs.appendFileSync('valid_with_lockup.txt', `${mnemonic}\n`);
 
-        // Dapatkan saldo yang tersedia
         const piBalance = account.balances.find(b => b.asset_type !== 'native');
         const saldoTersedia = piBalance ? parseFloat(piBalance.balance).toFixed(7) : '0.0000000';
         
-        // Proses detail setiap lockup
         let pesanLockup = "\n\n🔒 *Rincian Koin Terkunci:*\n";
         let totalTerkunci = 0;
 
@@ -121,7 +89,6 @@ async function cekSemua() {
           const amount = parseFloat(record.amount);
           totalTerkunci += amount;
 
-          // Cari tanggal unlock yang benar milik pengguna, bukan milik sistem
           const userClaimant = record.claimants.find(c => c.destination === pubkey);
           
           if (userClaimant && userClaimant.predicate && userClaimant.predicate.not && userClaimant.predicate.not.abs_before) {
@@ -135,7 +102,6 @@ async function cekSemua() {
           }
         });
         
-        // Susun pesan lengkap untuk dikirim ke Telegram
         const pesan = `✅ *Akun Pi Ditemukan (ADA LOCKUP)!*\n\n` +
                       `🔑 *Mnemonic:*\n\`${mnemonic}\`\n\n` +
                       `👤 *Public Key:*\n\`${pubkey}\`\n\n` +
@@ -147,26 +113,22 @@ async function cekSemua() {
         await kirimTelegram(pesan);
 
       } else {
-        // Akun ada, tapi tidak ada koin terkunci
         console.log(`[${index + 1}/${mnemonics.length}] ℹ️ Terdaftar, namun tidak ada lockup. Public Key: ${pubkey}`);
         fs.appendFileSync('valid_no_lockup.txt', `${mnemonic}\n`);
       }
 
     } catch (err) {
       if (err.response && err.response.status === 404) {
-        // Akun sama sekali tidak terdaftar
         const keypair = mnemonicToStellarKeypair(mnemonic);
         const pubkey = keypair.publicKey();
         console.log(`[${index + 1}/${mnemonics.length}] ❌ Tidak terdaftar. Public Key: ${pubkey}`);
         fs.appendFileSync('invalid.txt', `${mnemonic}\n`);
       } else {
-        // Error lain (misal: masalah jaringan, API down, dll)
         console.error(`[${index + 1}/${mnemonics.length}] ⚠️ Error saat cek mnemonic: ${mnemonic.substring(0, 15)}...`);
         console.error(`   Pesan Error: ${err.message || 'Error tidak diketahui'}`);
       }
     }
 
-    // Beri jeda 2 detik setelah setiap pengecekan untuk menghindari blokir
     await delay(2000); 
   }
 
@@ -175,5 +137,4 @@ async function cekSemua() {
   console.log('====================================================');
 }
 
-// Jalankan fungsi utama
 cekSemua();
