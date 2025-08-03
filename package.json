@@ -1,0 +1,24 @@
+{
+  "name": "cek-pharse-valid",
+  "version": "1.0.0",
+  "description": "Bot untuk cek pharsa valid di jaringan Stellar (Pi Network)",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "pi",
+    "stellar",
+    "crypto",
+    "bot"
+  ],
+  "author": "zendshost",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.8.4",
+    "bip39": "^3.1.0",
+    "ed25519-hd-key": "^1.3.0",
+    "stellar-sdk": "^10.4.0"
+  }
+}
